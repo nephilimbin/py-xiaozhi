@@ -4,6 +4,9 @@
 .specstory
 .github
 .venv
+LICENSE
+*.spec
+*.md
 
 # project
 docs/

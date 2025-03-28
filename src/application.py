@@ -19,7 +19,7 @@ except Exception as e:
     sys.exit(1)
 
 from src.protocols.mqtt_protocol import MqttProtocol
-from src.protocols.websocket_protocol import WebsocketProtocol
+from src.protocols.websocket_protocol import WebSocketProtocol
 from src.constants.constants import (
     DeviceState, EventType, AudioConfig, 
     AbortReason, ListeningMode
@@ -143,12 +143,14 @@ class Application:
         # 初始化音频编解码器
         self._initialize_audio()
         
-        # 设置联网协议回调（MQTT AND WEBSOCKET）
-        self.protocol.on_network_error = self._on_network_error
-        self.protocol.on_incoming_audio = self._on_incoming_audio
-        self.protocol.on_incoming_json = self._on_incoming_json
-        self.protocol.on_audio_channel_opened = self._on_audio_channel_opened
-        self.protocol.on_audio_channel_closed = self._on_audio_channel_closed
+        # 设置联网协议回调（使用新的回调设置方式）
+        self.protocol.set_callbacks(
+            on_network_error=self._on_network_error,
+            on_audio=self._on_incoming_audio,
+            on_json=self._on_incoming_json,
+            on_audio_channel_opened=self._on_audio_channel_opened,
+            on_audio_channel_closed=self._on_audio_channel_closed
+        )
 
         logger.info("应用程序初始化完成")
 
@@ -178,7 +180,7 @@ class Application:
         if protocol_type == 'mqtt':
             self.protocol = MqttProtocol(self.loop)
         else:  # websocket
-            self.protocol = WebsocketProtocol()
+            self.protocol = WebSocketProtocol()
 
     def set_display_type(self, mode: str):
         """初始化显示界面"""

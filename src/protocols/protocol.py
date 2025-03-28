@@ -1,53 +1,191 @@
+from abc import ABC, abstractmethod
+from typing import Callable, Optional, Dict, Any, Union
 import json
+import logging
+from enum import Enum
 
 from src.constants.constants import AbortReason, ListeningMode
 
 
-class Protocol:
+class ProtocolError(Exception):
+    """协议错误基类"""
+    pass
+
+
+class ConnectionError(ProtocolError):
+    """连接错误"""
+    pass
+
+
+class MessageError(ProtocolError):
+    """消息错误"""
+    pass
+
+
+class Protocol(ABC):
+    """
+    通信协议抽象基类
+    
+    定义客户端与服务器通信的标准接口。所有具体协议实现(如WebSocket, MQTT)
+    必须继承此类并实现所有抽象方法。
+    """
+    
     def __init__(self):
+        """初始化协议基类"""
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.session_id = ""
-        # 初始化回调函数为None
-        self.on_incoming_json = None
-        self.on_incoming_audio = None
-        self.on_audio_channel_opened = None
-        self.on_audio_channel_closed = None
-        self.on_network_error = None
-        # 添加音频配置变更回调
-        self.on_audio_config_changed = None
-
-    def on_incoming_json(self, callback):
-        """设置JSON消息接收回调函数"""
-        self.on_incoming_json = callback
-
-    def on_incoming_audio(self, callback):
-        """设置音频数据接收回调函数"""
-        self.on_incoming_audio = callback
-
-    def on_audio_channel_opened(self, callback):
-        """设置音频通道打开回调函数"""
-        self.on_audio_channel_opened = callback
-
-    def on_audio_channel_closed(self, callback):
-        """设置音频通道关闭回调函数"""
-        self.on_audio_channel_closed = callback
-
-    def on_network_error(self, callback):
-        """设置网络错误回调函数"""
-        self.on_network_error = callback
-
-    async def send_text(self, message):
-        """发送文本消息的抽象方法，需要在子类中实现"""
-        raise NotImplementedError("send_text方法必须由子类实现")
-
-    async def send_abort_speaking(self, reason):
-        """发送中止语音的消息"""
+        
+        # 初始化回调函数
+        self._on_incoming_json = None
+        self._on_incoming_audio = None
+        self._on_audio_channel_opened = None
+        self._on_audio_channel_closed = None
+        self._on_network_error = None
+        self._on_audio_config_changed = None
+        
+    def set_callbacks(self,
+                     on_json: Optional[Callable[[Dict[str, Any]], None]] = None,
+                     on_audio: Optional[Callable[[bytes], None]] = None,
+                     on_audio_channel_opened: Optional[Callable[[], None]] = None,
+                     on_audio_channel_closed: Optional[Callable[[], None]] = None,
+                     on_network_error: Optional[Callable[[str], None]] = None,
+                     on_audio_config_changed: Optional[Callable[[Dict[str, Any]], None]] = None) -> None:
+        """
+        设置通信回调函数
+        
+        参数:
+            on_json: 接收JSON消息的回调
+            on_audio: 接收音频数据的回调
+            on_audio_channel_opened: 音频通道打开时的回调
+            on_audio_channel_closed: 音频通道关闭时的回调
+            on_network_error: 网络错误的回调
+            on_audio_config_changed: 音频配置变更的回调
+        """
+        self._on_incoming_json = on_json
+        self._on_incoming_audio = on_audio
+        self._on_audio_channel_opened = on_audio_channel_opened
+        self._on_audio_channel_closed = on_audio_channel_closed
+        self._on_network_error = on_network_error
+        self._on_audio_config_changed = on_audio_config_changed
+    
+    @abstractmethod
+    async def connect(self) -> bool:
+        """
+        连接到服务器
+        
+        返回:
+            bool: 连接是否成功
+        
+        抛出:
+            ConnectionError: 当连接失败时
+        """
+        pass
+        
+    @abstractmethod
+    async def disconnect(self) -> bool:
+        """
+        断开与服务器的连接
+        
+        返回:
+            bool: 断开是否成功
+        """
+        pass
+    
+    @abstractmethod
+    async def send_text(self, message: str) -> bool:
+        """
+        发送文本消息到服务器
+        
+        参数:
+            message: 要发送的文本消息（通常是JSON字符串）
+            
+        返回:
+            bool: 发送是否成功
+            
+        抛出:
+            MessageError: 当发送失败时
+        """
+        pass
+    
+    @abstractmethod
+    async def send_audio(self, audio_data: bytes) -> bool:
+        """
+        发送音频数据到服务器
+        
+        参数:
+            audio_data: 编码后的音频数据
+            
+        返回:
+            bool: 发送是否成功
+            
+        抛出:
+            MessageError: 当发送失败时
+        """
+        pass
+    
+    @abstractmethod
+    async def open_audio_channel(self) -> bool:
+        """
+        打开音频通道
+        
+        返回:
+            bool: 是否成功打开音频通道
+        """
+        pass
+    
+    @abstractmethod
+    async def close_audio_channel(self) -> bool:
+        """
+        关闭音频通道
+        
+        返回:
+            bool: 是否成功关闭音频通道
+        """
+        pass
+    
+    @abstractmethod
+    def is_audio_channel_opened(self) -> bool:
+        """
+        检查音频通道是否已打开
+        
+        返回:
+            bool: 音频通道是否打开
+        """
+        pass
+    
+    async def send_abort_speaking(self, reason: AbortReason) -> bool:
+        """
+        发送中止语音的消息
+        
+        参数:
+            reason: 中止原因，AbortReason枚举类型
+            
+        返回:
+            bool: 发送是否成功
+        """
         message = {
             "session_id": self.session_id,
             "type": "abort"
         }
+        
         if reason == AbortReason.WAKE_WORD_DETECTED:
             message["reason"] = "wake_word_detected"
-        await self.send_text(json.dumps(message))
+        
+        return await self.send_text(json.dumps(message))
+    
+    def _handle_error(self, error: Exception, context: str = "") -> None:
+        """
+        统一处理错误
+        
+        参数:
+            error: 错误对象
+            context: 错误上下文描述
+        """
+        error_msg = f"{context}: {str(error)}" if context else str(error)
+        self.logger.error(f"协议错误: {error_msg}")
+        
+        if self._on_network_error:
+            self._on_network_error(error_msg)
 
     async def send_wake_word_detected(self, wake_word):
         """发送检测到唤醒词的消息"""
