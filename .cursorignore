@@ -1,0 +1,16 @@
+.cursorignore
+.gitignore
+.vscode
+.specstory
+.github
+.venv
+
+# project
+docs/
+hooks/
+libs/
+scripts/
+cache/
+__pycache__/
+
+
